@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Blood Inventory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css" />
+    <style>
+        #map { height: 500px; width: 100%; border-radius: 1rem; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.15); }
+        .btn { transition: background-color 0.3s ease, transform 0.2s ease; }
+        .btn:hover { transform: scale(1.05); }
+        .header { margin: 30px; }
+        .low-stock { color: #ef4444; font-weight: bold; }
+    </style>
+</head>
+<body class="bg-red-50 min-h-screen flex flex-col font-sans">
+    <header class="w-full bg-white text-red-600 py-8 text-center shadow-lg header">
+        <h1 class="text-5xl font-extrabold tracking-tight">🩸Hospital Blood Inventory</h1>
+        <p class="mt-3 text-xl font-light text-black">Real-time blood stock updates for hospitals in Odisha</p>
+    </header>
+
+    <main class="w-full max-w-6xl mx-auto mt-10 px-6">
+        <section class="bg-white p-8 rounded-2xl shadow-xl">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">Hospital Blood Inventory</h2>
+            <div id="inventory-list" class="grid gap-6"></div>
+        </section>
+
+        <section class="mt-10">
+            <div id="map" class="rounded-2xl"></div>
+        </section>
+
+        <section class="mt-10">
+            <a href="/" class="bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 btn flex items-center justify-center transition-all duration-300 w-full max-w-xs mx-auto">Back to Main Page</a>
+        </section>
+    </main>
+
+    <footer class="w-full bg-gray-800 text-white py-6 mt-12 text-center">
+        <p class="text-sm">© 2025 Smart Blood Donation System. Built for Odisha's healthcare needs.</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        const socket = io('http://localhost:5000');
+        const map = L.map('map').setView([20.2961, 85.8245], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let hospitalInventory = [];
+
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket');
+            Toastify({
+                text: "Connected to live updates",
+                duration: 3000,
+                gravity: "top",
+                position: "right",
+                style: { background: "#10b981", borderRadius: "8px", fontSize: "16px" }
+            }).showToast();
+        });
+
+        socket.on('hospital_update', (data) => {
+            console.log('Received hospital update:', data);
+            updateHospitalInventory(data);
+            updateHospitalMarkers();
+            Toastify({
+                text: `Hospital ${data.name} updated: ${data.blood_type} stock = ${data.stock}`,
+                duration: 5000,
+                gravity: "top",
+                position: "right",
+                style: { 
+                    background: data.stock < 5 ? "#ef4444" : "#10b981",
+                    borderRadius: "8px",
+                    fontSize: "16px"
+                }
+            }).showToast();
+        });
+
+        function updateHospitalInventory(update) {
+            const existing = hospitalInventory.find(h => h.name === update.name && h.blood_type === update.blood_type);
+            if (existing) {
+                existing.stock = update.stock;
+                existing.latitude = update.latitude;
+                existing.longitude = update.longitude;
+            } else {
+                hospitalInventory.push(update);
+            }
+            renderHospitalInventory();
+        }
+
+        function renderHospitalInventory() {
+            const inventoryList = document.getElementById('inventory-list');
+            inventoryList.innerHTML = hospitalInventory.map(h => `
+                <div class="bg-gray-50 p-4 rounded-lg shadow-md card">
+                    <p class="text-gray-600"><strong>Hospital:</strong> ${h.name}</p>
+                    <p class="text-gray-600"><strong>Blood Type:</strong> ${h.blood_type}</p>
+                    <p class="text-gray-600 ${h.stock < 5 ? 'low-stock' : ''}"><strong>Stock:</strong> ${h.stock} units</p>
+                </div>
+            `).join('');
+        }
+
+        function updateHospitalMarkers() {
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            hospitalInventory.forEach(hospital => {
+                if (isNaN(hospital.latitude) || isNaN(hospital.longitude)) {
+                    console.warn(`Invalid hospital coordinates for ${hospital.name}: [${hospital.latitude}, ${hospital.longitude}]`);
+                    return;
+                }
+                L.marker([hospital.latitude, hospital.longitude], {
+                    icon: L.icon({
+                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41]
+                    })
+                }).addTo(map).bindPopup(`${hospital.name}<br>${hospital.blood_type}: ${hospital.stock} units`);
+            });
+        }
+
+        // Fetch initial hospital data
+        async function fetchHospitalData() {
+            try {
+                const response = await fetch('http://localhost:5000/hospitals', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    hospitalInventory = data.hospitals;
+                    renderHospitalInventory();
+                    updateHospitalMarkers();
+                } else {
+                    Toastify({
+                        text: `Error: ${data.message}`,
+                        duration: 5000,
+                        gravity: "top",
+                        position: "right",
+                        style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                    }).showToast();
+                }
+            } catch (error) {
+                Toastify({
+                    text: `Error fetching hospital data: ${error.message}`,
+                    duration: 5000,
+                    gravity: "top",
+                    position: "right",
+                    style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                    }).showToast();
+                }
+        }
+
+        // Initialize hospital data on page load
+        fetchHospitalData();
+    </script>
+</body>
+</html>

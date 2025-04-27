@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donor Matches - Smart Blood Donation System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css" />
+    <style>
+        #map { height: 500px; width: 100%; border-radius: 1rem; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .loading-spinner {
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #10b981;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+        .card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.15); }
+        .btn { transition: background-color 0.3s ease, transform 0.2s ease; }
+        .btn:hover { transform: scale(1.05); }
+        .modal { transition: opacity 0.3s ease; }
+        .header { margin: 30px; }
+    </style>
+</head>
+<body class="bg-red-50 min-h-screen flex flex-col font-sans">
+    <header class="w-full bg-white text-red-600 py-8 text-center shadow-lg header">
+        <h1 class="text-5xl font-extrabold tracking-tight">🩸Donor Matches</h1>
+        <p class="mt-3 text-xl font-light text-black">Matched donors for your request</p>
+        <a href="/" class="mt-4 inline-block bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 btn">Back to Home</a>
+    </header>
+
+    <main class="w-full max-w-6xl mx-auto mt-10 px-6">
+        <section class="bg-white p-8 rounded-2xl shadow-xl mb-10">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">Search Details</h2>
+            <p class="text-gray-600"><strong>Blood Type:</strong> <span id="search-blood-type">Loading...</span></p>
+            <p class="text-gray-600"><strong>Location:</strong> <span id="search-location">Loading...</span></p>
+            <p class="text-gray-600"><strong>Urgency:</strong> <span id="search-urgency">Loading...</span></p>
+        </section>
+
+        <section class="mb-10">
+            <div id="map" class="rounded-2xl"></div>
+        </section>
+
+        <section id="results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
+            <div id="loading-results" class="col-span-full flex items-center justify-center">
+                <div class="loading-spinner" style="display: block;"></div>
+                <p class="ml-3 text-gray-600">Loading donors...</p>
+            </div>
+        </section>
+
+        <section id="appointments-section" class="bg-white p-8 rounded-2xl shadow-xl hidden">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6">Scheduled Appointments</h2>
+            <div id="appointments-list" class="grid gap-6"></div>
+        </section>
+    </main>
+
+    <!-- Appointment Modal -->
+    <div id="appointment-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden modal">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Schedule Donation</h2>
+            <form id="appointment-form">
+                <input type="hidden" id="appointment-donor-id">
+                <div class="mb-4">
+                    <label for="appointment-location" class="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                    <select id="appointment-location" class="block w-full p-3 border border-gray-200 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 bg-gray-50">
+                        <option value="Bhubaneswar">Bhubaneswar</option>
+                        <option value="Cuttack">Cuttack</option>
+                        <option value="Rourkela">Rourkela</option>
+                        <option value="Berhampur">Berhampur</option>
+                        <option value="Sambalpur">Sambalpur</option>
+                        <option value="Puri">Puri</option>
+                        <option value="Balasore">Balasore</option>
+                        <option value="Bargarh">Bargarh</option>
+                        <option value="Angul">Angul</option>
+                        <option value="Jharsuguda">Jharsuguda</option>
+                        <option value="Dhenkanal">Dhenkanal</option>
+                        <option value="Kendrapara">Kendrapara</option>
+                        <option value="Jagatsinghpur">Jagatsinghpur</option>
+                        <option value="Koraput">Koraput</option>
+                        <option value="Rayagada">Rayagada</option>
+                        <option value="Bolangir">Bolangir</option>
+                        <option value="Sundargarh">Sundargarh</option>
+                        <option value="Nayagarh">Nayagarh</option>
+                        <option value="Malkangiri">Malkangiri</option>
+                        <option value="Khordha">Khordha</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="appointment-date" class="block text-sm font-medium text-gray-700 mb-2">Date & Time</label>
+                    <input type="datetime-local" id="appointment-date" required class="block w-full p-3 border border-gray-200 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 bg-gray-50">
+                </div>
+                <div class="mb-4">
+                    <label for="appointment-notes" class="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                    <textarea id="appointment-notes" class="block w-full p-3 border border-gray-200 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 bg-gray-50" rows="4"></textarea>
+                </div>
+                <div class="flex justify-end gap-4">
+                    <button type="button" id="cancel-appointment" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-400 btn">Cancel</button>
+                    <button type="submit" class="bg-emerald-600 text-white py-2 px-4 rounded-lg hover:bg-emerald-700 btn">Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="history-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden modal">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Donation History</h2>
+            <div id="history-list" class="max-h-64 overflow-y-auto"></div>
+            <div class="flex justify-end mt-6">
+                <button id="close-history" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-400 btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="w-full bg-gray-800 text-white py-6 mt-12 text-center">
+        <p class="text-sm">© 2025 Smart Blood Donation System. Built for Odisha's healthcare needs.</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <script>
+        const map = L.map('map').setView([20.2961, 85.8245], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        const odishaLocations = {
+            'Bhubaneswar': [20.2961, 85.8245],
+            'Cuttack': [20.4625, 85.8828],
+            'Rourkela': [22.2604, 84.8536],
+            'Berhampur': [19.3140, 84.7941],
+            'Sambalpur': [21.4669, 83.9757],
+            'Puri': [19.8134, 85.8315],
+            'Balasore': [21.4940, 86.9427],
+            'Bargarh': [21.3353, 83.6161],
+            'Angul': [20.8442, 85.1511],
+            'Jharsuguda': [21.8553, 84.0062],
+            'Dhenkanal': [20.6587, 85.5980],
+            'Kendrapara': [20.5002, 86.4166],
+            'Jagatsinghpur': [20.2548, 86.1706],
+            'Koraput': [18.8110, 82.7105],
+            'Rayagada': [19.1711, 83.4160],
+            'Bolangir': [20.7074, 83.4843],
+            'Sundargarh': [22.1167, 84.0333],
+            'Nayagarh': [20.1281, 85.0985],
+            'Malkangiri': [18.3650, 82.1367],
+            'Khordha': [20.1883, 85.6214]
+        };
+
+        let scheduledAppointments = [];
+
+        // Get query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const blood_type = urlParams.get('blood_type');
+        const location = urlParams.get('location');
+        const urgency = parseInt(urlParams.get('urgency'));
+        const resultsDiv = document.getElementById('results');
+        const loadingResults = document.getElementById('loading-results');
+
+        // Validate parameters
+        const validBloodTypes = ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'];
+        if (!blood_type || !validBloodTypes.includes(blood_type) || !location || !odishaLocations[location] || isNaN(urgency) || urgency < 1 || urgency > 10) {
+            resultsDiv.innerHTML = `<div class="col-span-full bg-white p-6 rounded-lg shadow-md"><p class="text-red-500 font-medium">Invalid search parameters. Please try again from the home page.</p></div>`;
+            loadingResults.style.display = 'none';
+            Toastify({
+                text: "Invalid search parameters.",
+                duration: 5000,
+                gravity: "top",
+                position: "right",
+                style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+            }).showToast();
+        } else {
+            // Display search details
+            document.getElementById('search-blood-type').textContent = blood_type;
+            document.getElementById('search-location').textContent = location;
+            document.getElementById('search-urgency').textContent = urgency;
+
+            // Fetch matches
+            fetchMatches();
+        }
+
+        async function fetchMatches() {
+            try {
+                const response = await fetch('http://localhost:5000/match', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ blood_type, location, urgency })
+                });
+
+                const matchData = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(matchData.message || `HTTP error! Status: ${response.status}`);
+                }
+
+                map.eachLayer(layer => {
+                    if (layer instanceof L.Marker) {
+                        map.removeLayer(layer);
+                    }
+                });
+
+                const [latitude, longitude] = odishaLocations[location];
+                const bounds = [[latitude, longitude]];
+
+                const recipientMarker = L.marker([latitude, longitude], {
+                    icon: L.icon({
+                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41]
+                    })
+                }).addTo(map).bindPopup('Recipient');
+                recipientMarker.openPopup();
+
+                if (matchData.status === 'success' && matchData.matches.length > 0) {
+                    let results = '';
+                    matchData.matches.forEach(match => {
+                        if (isNaN(match.donor_latitude) || isNaN(match.donor_longitude)) {
+                            console.warn(`Invalid donor coordinates for Donor ${match.donor_id}: [${match.donor_latitude}, ${match.donor_longitude}]`);
+                            return;
+                        }
+                        const hospitalDistance = match.hospital_distance === null ? 'No low-stock hospitals' : `${match.hospital_distance.toFixed(2)} km`;
+                        results += `
+                            <div class="bg-white p-6 rounded-xl shadow-lg card">
+                                <h3 class="text-lg font-semibold text-gray-800">Donor ${match.donor_id}</h3>
+                                <p class="mt-2 text-gray-600"><strong>Blood Type:</strong> ${match.blood_type}</p>
+                                <p class="text-gray-600"><strong>Availability:</strong> <span class="${match.availability_status.includes('Available') ? 'text-green-600' : 'text-red-600'}">${match.availability_status}</span></p>
+                                <p class="text-gray-600"><strong>Last Donation:</strong> ${match.last_donation || 'Unknown'}</p>
+                                <p class="text-gray-600"><strong>Distance to Recipient:</strong> ${match.distance.toFixed(2)} km</p>
+                                <p class="text-gray-600"><strong>Distance to Hospital:</strong> ${hospitalDistance}</p>
+                                <p class="text-gray-600"><strong>Urgency:</strong> ${match.urgency_score}</p>
+                                <p class="text-gray-600"><strong>AI Match Score:</strong> ${(match.match_quality * 100).toFixed(2)}%</p>
+                                <p class="text-gray-600"><strong>SMS Status:</strong> ${matchData.sms_status}</p>
+                                <p class="text-gray-600"><strong>Contact:</strong> <span id="phone-${match.donor_id}">${match.masked_phone}</span></p>
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    <button class="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 btn contact-btn" data-token="${match.contact_token}" data-donor-id="${match.donor_id}" ${match.masked_phone === 'Unknown' ? 'disabled' : ''}>Contact Donor</button>
+                                    <button class="bg-emerald-600 text-white py-2 px-4 rounded-lg hover:bg-emerald-700 btn schedule-btn" data-donor-id="${match.donor_id}" ${match.availability_status.includes('Unavailable') ? 'disabled' : ''}>Schedule Donation</button>
+                                    <button class="bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 btn history-btn" data-donor-id="${match.donor_id}">View History</button>
+                                </div>
+                            </div>`;
+                        L.marker([match.donor_latitude, match.donor_longitude], {
+                            icon: L.icon({
+                                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+                                iconSize: [25, 41],
+                                iconAnchor: [12, 41]
+                            })
+                        }).addTo(map).bindPopup(`Donor ${match.donor_id}: ${match.blood_type}`);
+                        bounds.push([match.donor_latitude, match.donor_longitude]);
+                    });
+                    resultsDiv.innerHTML = results;
+
+                    document.querySelectorAll('.contact-btn').forEach(button => {
+                        button.addEventListener('click', async () => {
+                            const token = button.getAttribute('data-token');
+                            const donorId = button.getAttribute('data-donor-id');
+                            try {
+                                const response = await fetch('http://localhost:5000/reveal_phone', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ token })
+                                });
+                                const data = await response.json();
+                                if (data.status === 'success') {
+                                    document.getElementById(`phone-${donorId}`).textContent = data.phone;
+                                    Toastify({
+                                        text: `Contact number revealed for Donor ${donorId}. Valid for 5 minutes.`,
+                                        duration: 5000,
+                                        gravity: "top",
+                                        position: "right",
+                                        style: { background: "#10b981", borderRadius: "8px", fontSize: "16px" }
+                                    }).showToast();
+                                    button.disabled = true;
+                                    button.textContent = 'Number Revealed';
+                                } else {
+                                    Toastify({
+                                        text: `Error: ${data.message}`,
+                                        duration: 5000,
+                                        gravity: "top",
+                                        position: "right",
+                                        style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                                    }).showToast();
+                                }
+                            } catch (error) {
+                                Toastify({
+                                    text: `Error revealing number: ${error.message}`,
+                                    duration: 5000,
+                                    gravity: "top",
+                                    position: "right",
+                                    style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                                }).showToast();
+                            }
+                        });
+                    });
+
+                    document.querySelectorAll('.schedule-btn').forEach(button => {
+                        button.addEventListener('click', () => {
+                            const donorId = button.getAttribute('data-donor-id');
+                            document.getElementById('appointment-donor-id').value = donorId;
+                            document.getElementById('appointment-location').value = location;
+                            document.getElementById('appointment-modal').classList.remove('hidden');
+                        });
+                    });
+
+                    document.querySelectorAll('.history-btn').forEach(button => {
+                        button.addEventListener('click', async () => {
+                            const donorId = button.getAttribute('data-donor-id');
+                            try {
+                                const response = await fetch('http://localhost:5000/donation_history', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ donor_id: parseInt(donorId) })
+                                });
+                                const data = await response.json();
+                                if (data.status === 'success') {
+                                    const historyList = document.getElementById('history-list');
+                                    historyList.innerHTML = data.history.length > 0
+                                        ? data.history.map(date => `<p class="text-gray-600">${date}</p>`).join('')
+                                        : '<p class="text-gray-600">No donation history available.</p>';
+                                    document.getElementById('history-modal').classList.remove('hidden');
+                                } else {
+                                    Toastify({
+                                        text: `Error: ${data.message}`,
+                                        duration: 5000,
+                                        gravity: "top",
+                                        position: "right",
+                                        style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                                    }).showToast();
+                                }
+                            } catch (error) {
+                                Toastify({
+                                    text: `Error fetching history: ${error.message}`,
+                                    duration: 5000,
+                                    gravity: "top",
+                                    position: "right",
+                                    style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                                }).showToast();
+                            }
+                        });
+                    });
+
+                    Toastify({
+                        text: `SMS Status: ${matchData.sms_status}`,
+                        duration: 5000,
+                        gravity: "top",
+                        position: "right",
+                        style: {
+                            background: matchData.sms_status === "sent" ? "#10b981" : "#ef4444",
+                            borderRadius: "8px",
+                            fontSize: "16px"
+                        }
+                    }).showToast();
+
+                    if (bounds.length > 1) {
+                        map.fitBounds(bounds, { padding: [50, 50] });
+                    } else {
+                        map.setView([latitude, longitude], 10);
+                    }
+                } else {
+                    resultsDiv.innerHTML = `<div class="col-span-full bg-white p-6 rounded-lg shadow-md"><p class="text-red-500 font-medium">No donors found. Try a different location or blood type.</p></div>`;
+                    Toastify({
+                        text: "No donors found.",
+                        duration: 5000,
+                        gravity: "top",
+                        position: "right",
+                        style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                    }).showToast();
+                    map.setView([latitude, longitude], 10);
+                }
+
+                updateAppointmentsSection();
+            } catch (error) {
+                console.error('Error fetching matches:', error);
+                resultsDiv.innerHTML = `<div class="col-span-full bg-white p-6 rounded-lg shadow-md"><p class="text-red-500 font-medium">Error: ${error.message}</p></div>`;
+                Toastify({
+                    text: `Error: ${error.message}`,
+                    duration: 5000,
+                    gravity: "top",
+                    position: "right",
+                    style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                }).showToast();
+            } finally {
+                loadingResults.style.display = 'none';
+            }
+        }
+
+        document.getElementById('appointment-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const donorId = parseInt(document.getElementById('appointment-donor-id').value);
+            const appointmentLocation = document.getElementById('appointment-location').value;
+            const date = document.getElementById('appointment-date').value;
+            const notes = document.getElementById('appointment-notes').value;
+
+            try {
+                const response = await fetch('http://localhost:5000/schedule_appointment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        donor_id: donorId,
+                        recipient_location: appointmentLocation,
+                        appointment_date: new Date(date).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', ' '),
+                        notes
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    scheduledAppointments.push(data.appointment);
+                    updateAppointmentsSection();
+                    document.getElementById('appointment-modal').classList.add('hidden');
+                    document.getElementById('appointment-form').reset();
+                    Toastify({
+                        text: `Appointment scheduled for Donor ${donorId}. SMS: ${data.sms_status}`,
+                        duration: 5000,
+                        gravity: "top",
+                        position: "right",
+                        style: { background: "#10b981", borderRadius: "8px", fontSize: "16px" }
+                    }).showToast();
+                } else {
+                    Toastify({
+                        text: `Error: ${data.message}`,
+                        duration: 5000,
+                        gravity: "top",
+                        position: "right",
+                        style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                    }).showToast();
+                }
+            } catch (error) {
+                Toastify({
+                    text: `Error scheduling appointment: ${error.message}`,
+                    duration: 5000,
+                    gravity: "top",
+                    position: "right",
+                    style: { background: "#ef4444", borderRadius: "8px", fontSize: "16px" }
+                }).showToast();
+            }
+        });
+
+        document.getElementById('cancel-appointment').addEventListener('click', () => {
+            document.getElementById('appointment-modal').classList.add('hidden');
+            document.getElementById('appointment-form').reset();
+        });
+
+        document.getElementById('close-history').addEventListener('click', () => {
+            document.getElementById('history-modal').classList.add('hidden');
+        });
+
+        function updateAppointmentsSection() {
+            const section = document.getElementById('appointments-section');
+            const list = document.getElementById('appointments-list');
+            if (scheduledAppointments.length > 0) {
+                section.classList.remove('hidden');
+                list.innerHTML = scheduledAppointments.map(appt => `
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-md">
+                        <p class="text-gray-600"><strong>Donor ID:</strong> ${appt.donor_id}</p>
+                        <p class="text-gray-600"><strong>Location:</strong> ${appt.recipient_location}</p>
+                        <p class="text-gray-600"><strong>Date:</strong> ${appt.appointment_date}</p>
+                        <p class="text-gray-600"><strong>Notes:</strong> ${appt.notes || 'None'}</p>
+                        <p class="text-gray-600"><strong>Status:</strong> ${appt.status}</p>
+                    </div>
+                `).join('');
+            } else {
+                section.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
