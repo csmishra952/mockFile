@@ -31,7 +31,7 @@ TWILIO_PHONE = os.getenv('TWILIO_PHONE', '+919692906282')
 TWILIO_TRIAL_MODE = True
 
 # JWT secret for hospital authentication
-JWT_SECRET = os.getenv('JWT_SECRET', 'your-secret-key')  # Replace with a secure key in .env
+JWT_SECRET = os.getenv('JWT_SECRET', 'your-secret-key')
 
 # Initialize Twilio client
 try:
@@ -77,7 +77,7 @@ phone_tokens = {}
 
 # Registered hospitals (for demo; in production, use a database)
 REGISTERED_HOSPITALS = {
-    'hospital1': 'password123'  # Replace with secure storage in production
+    'hospital1': 'password123'
 }
 
 def mask_phone(phone):
@@ -487,4 +487,5 @@ def handle_connect():
     emit('connection_status', {'status': 'connected'})
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    # Run Flask's built-in server for development only
+    app.run(debug=True, host='0.0.0.0', port=5000)
